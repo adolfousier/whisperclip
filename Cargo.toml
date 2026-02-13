@@ -1,7 +1,7 @@
 [package]
 name = "linwhisper"
-version = "0.1.1"
-edition = "2021"
+version = "0.1.11"
+edition = "2024"
 authors = ["Adolfo Usier"]
 license = "MIT"
 description = "Floating voice-to-text tool for Linux using Groq Whisper API"

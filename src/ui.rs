@@ -9,10 +9,11 @@ use crate::audio::Recorder;
 use crate::config::Config;
 use crate::db::Db;
 
-const MIC_IDLE: &str = "\u{1F399}";
-const MIC_REC: &str = "\u{23F9}";
-const MIC_WAIT: &str = "\u{2026}";
-const MIC_DONE: &str = "\u{2713}";
+// Symbolic icon names (SVG-based, always centered)
+const ICON_IDLE: &str = "audio-input-microphone-symbolic";
+const ICON_REC: &str = "media-playback-stop-symbolic";
+const ICON_DONE: &str = "object-select-symbolic";
+const TEXT_WAIT: &str = "\u{2026}"; // …
 
 const CSS: &str = r#"
     window {
@@ -25,41 +26,43 @@ const CSS: &str = r#"
         background-image: none;
         background-color: #dc2626;
         color: white;
-        font-size: 28px;
+        font-size: 36px;
         font-weight: 600;
-        border: 2px solid rgba(255, 255, 255, 0.25);
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.15);
+        border: none;
+        box-shadow: none;
         outline: none;
         -gtk-icon-shadow: none;
+        -gtk-icon-size: 36px;
         padding: 0;
     }
     .mic-btn:hover {
         background-image: none;
         background-color: #b91c1c;
-        border: 2px solid rgba(255, 255, 255, 0.35);
+        box-shadow: none;
     }
     .mic-btn:active {
         background-image: none;
         background-color: #991b1b;
+        box-shadow: none;
     }
     .mic-btn.recording,
     .mic-btn.recording:hover {
         background-image: none;
         background-color: #16a34a;
-        box-shadow: 0 4px 16px rgba(22, 163, 74, 0.5);
+        box-shadow: none;
         animation: pulse 1s ease-in-out infinite;
     }
     .mic-btn.processing,
     .mic-btn.processing:hover {
         background-image: none;
         background-color: #d97706;
-        box-shadow: 0 4px 12px rgba(217, 119, 6, 0.4);
+        box-shadow: none;
     }
     .mic-btn.done,
     .mic-btn.done:hover {
         background-image: none;
         background-color: #16a34a;
-        box-shadow: 0 4px 12px rgba(22, 163, 74, 0.4);
+        box-shadow: none;
     }
     @keyframes pulse {
         0%   { opacity: 1.0; }
@@ -68,7 +71,7 @@ const CSS: &str = r#"
     }
     .status-label {
         color: #e2e8f0;
-        font-size: 9px;
+        font-size: 12px;
         font-weight: 500;
         background-color: rgba(15, 23, 42, 0.75);
         border-radius: 6px;
@@ -107,10 +110,12 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     vbox.set_halign(gtk4::Align::Center);
     vbox.set_valign(gtk4::Align::Center);
 
-    // The mic button
-    let button = gtk4::Button::with_label(MIC_IDLE);
+    // The mic button (no keyboard activation to prevent accidental recordings)
+    let button = gtk4::Button::new();
+    button.set_icon_name(ICON_IDLE);
     button.add_css_class("mic-btn");
     button.set_size_request(96, 64);
+    button.set_focusable(false);
 
     let status = gtk4::Label::new(None);
     status.add_css_class("status-label");
@@ -158,7 +163,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                 *state_c.borrow_mut() = State::Recording;
                 btn.add_css_class("recording");
                 btn.remove_css_class("done");
-                btn.set_label(MIC_REC);
+                btn.set_icon_name(ICON_REC);
                 st.set_label("Recording...");
                 st.set_visible(true);
             }
@@ -166,7 +171,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                 *state_c.borrow_mut() = State::Processing;
                 btn.remove_css_class("recording");
                 btn.add_css_class("processing");
-                btn.set_label(MIC_WAIT);
+                btn.set_label(TEXT_WAIT);
                 st.set_label("Transcribing...");
 
                 let wav = match rec_c.borrow_mut().stop() {
@@ -176,7 +181,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                         st.set_label(&format!("Err: {e}"));
                         *state_c.borrow_mut() = State::Idle;
                         btn.remove_css_class("processing");
-                        btn.set_label(MIC_IDLE);
+                        btn.set_icon_name(ICON_IDLE);
                         return;
                     }
                 };
@@ -211,13 +216,13 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                                     *pp2.borrow_mut() = true;
                                     btn2.remove_css_class("processing");
                                     btn2.add_css_class("done");
-                                    btn2.set_label(MIC_DONE);
+                                    btn2.set_icon_name(ICON_DONE);
                                     st2.set_label("Click target \u{2192}");
                                 }
                                 Err(e) => {
                                     eprintln!("Clipboard error: {e}");
                                     btn2.remove_css_class("processing");
-                                    btn2.set_label(MIC_IDLE);
+                                    btn2.set_icon_name(ICON_IDLE);
                                     st2.set_label("Error!");
                                 }
                             }
@@ -227,7 +232,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                         Ok(Err(e)) => {
                             eprintln!("Transcription error: {e}");
                             btn2.remove_css_class("processing");
-                            btn2.set_label(MIC_IDLE);
+                            btn2.set_icon_name(ICON_IDLE);
                             st2.set_label("Error!");
                             let st3 = st2.clone();
                             glib::timeout_add_local_once(
@@ -241,7 +246,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                         Err(_) => {
                             *state_c2.borrow_mut() = State::Idle;
                             btn2.remove_css_class("processing");
-                            btn2.set_label(MIC_IDLE);
+                            btn2.set_icon_name(ICON_IDLE);
                             glib::ControlFlow::Break
                         }
                     }
@@ -271,7 +276,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                 glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
                     st_f2.set_visible(false);
                     btn_f2.remove_css_class("done");
-                    btn_f2.set_label(MIC_IDLE);
+                    btn_f2.set_icon_name(ICON_IDLE);
                 });
             });
         }
