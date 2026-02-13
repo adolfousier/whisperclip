@@ -8,8 +8,8 @@ LinWhisper runs entirely on your machine. Your microphone is **never accessed** 
 
 ## Features
 
-- Always-on-top floating microphone button
-- One-click voice recording with visual feedback
+- Always-on-top floating microphone button (draggable, position persists)
+- One-click voice recording with visual feedback (red idle, green recording)
 - Transcription via Groq API (whisper-large-v3-turbo)
 - Auto-pastes transcribed text into focused input field
 - SQLite history with right-click access
@@ -18,15 +18,23 @@ LinWhisper runs entirely on your machine. Your microphone is **never accessed** 
 
 ## Dependencies
 
-### System packages (Debian/Ubuntu)
+### System packages
 
+**Debian/Ubuntu:**
 ```bash
-sudo apt install libgtk-4-dev libgraphene-1.0-dev libvulkan-dev libasound2-dev xclip xdotool
+sudo apt install libgtk-4-dev libgraphene-1.0-dev libvulkan-dev libasound2-dev xclip xdotool wmctrl
 ```
 
-### Runtime
+**Arch Linux:**
+```bash
+sudo pacman -S gtk4 graphene vulkan-icd-loader alsa-lib xclip xdotool wmctrl
+```
 
-- X11 session (Wayland not currently supported for paste/positioning)
+### Runtime requirements
+
+- **X11 session required** — LinWhisper relies on `xdotool`, `xclip`, and `wmctrl` for window positioning, clipboard, and paste simulation. These are X11-only tools and **do not work on native Wayland**. If your distro runs Wayland by default (GNOME 41+, Fedora, etc.), you can either:
+  - Log in to an X11/Xorg session from your display manager
+  - Run under XWayland (may partially work, but not guaranteed)
 - Working microphone
 
 ## Setup
@@ -51,11 +59,14 @@ sudo apt install libgtk-4-dev libgraphene-1.0-dev libvulkan-dev libasound2-dev x
 
 ## Usage
 
-- **Left-click** the floating button to start recording (turns red with pulse)
-- **Left-click** again to stop — audio is sent to Groq, transcription is pasted into your focused input
-- **Right-click** to view transcription history or quit
+| Action | What happens |
+|---|---|
+| **Left-click** | Start recording (button turns green with pulse, shows stop icon) |
+| **Left-click again** | Stop recording, transcribe, auto-paste into focused input |
+| **Right-click** | Popover menu with History and Quit |
+| **Drag** | Move the button anywhere on screen — position saved across sessions |
 
-> **Note:** Auto-paste uses `xclip` and `xdotool` to simulate Ctrl+V. Some applications or Wayland sessions may not support this. If text doesn't paste automatically, it will still be copied to your clipboard — just paste manually with Ctrl+V.
+> **Note:** Auto-paste uses `xclip` and `xdotool` to simulate Ctrl+V. If text doesn't paste automatically, it will still be copied to your clipboard — just paste manually with Ctrl+V.
 
 ## Stack
 
