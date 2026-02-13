@@ -111,7 +111,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
 
     let window = gtk4::ApplicationWindow::builder()
         .application(app)
-        .title("LinWhisper")
+        .title("WhisperClip")
         .default_width(88)
         .default_height(100)
         .decorated(false)
@@ -401,7 +401,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                 "--dest=org.gnome.Shell",
                 "--object-path=/org/gnome/Shell",
                 "--method=org.gnome.Shell.Eval",
-                r#"global.get_window_actors().find(a=>a.meta_window.title==='LinWhisper')?.meta_window.activate(0)"#,
+                r#"global.get_window_actors().find(a=>a.meta_window.title==='WhisperClip')?.meta_window.activate(0)"#,
             ])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -479,7 +479,7 @@ fn position_window(_window: &gtk4::ApplicationWindow, db: &Arc<Mutex<Db>>) {
         }
     };
 
-    let title = "LinWhisper";
+    let title = "WhisperClip";
     let _ = std::process::Command::new("xdotool")
         .args([
             "search", "--name", title,
@@ -490,7 +490,7 @@ fn position_window(_window: &gtk4::ApplicationWindow, db: &Arc<Mutex<Db>>) {
 
 fn show_history_dialog(_window: &gtk4::ApplicationWindow, db: &Arc<Mutex<Db>>) {
     let dialog = gtk4::Window::builder()
-        .title("LinWhisper History")
+        .title("WhisperClip History")
         .default_width(400)
         .default_height(300)
         .build();

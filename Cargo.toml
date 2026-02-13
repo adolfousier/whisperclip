@@ -1,11 +1,11 @@
 [package]
-name = "linwhisper"
+name = "whisperclip"
 version = "0.1.14"
 edition = "2024"
 authors = ["Adolfo Usier"]
 license = "MIT"
 description = "Floating voice-to-text tool for Linux with local and API-based transcription"
-repository = "https://github.com/adolfousier/linwhisper"
+repository = "https://github.com/adolfousier/whisperclip"
 
 [dependencies]
 gtk4 = "0.9"

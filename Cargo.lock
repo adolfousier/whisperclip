@@ -1267,26 +1267,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
 
 [[package]]
-name = "linwhisper"
-version = "0.1.14"
-dependencies = [
- "chrono",
- "cpal",
- "dirs",
- "dotenvy",
- "gtk4",
- "hound",
- "reqwest",
- "rodio",
- "rubato",
- "rusqlite",
- "serde",
- "serde_json",
- "tokio",
- "whisper-rs",
-]
-
-[[package]]
 name = "litemap"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2594,6 +2574,26 @@ dependencies = [
  "cfg-if",
  "cmake",
  "fs_extra",
+]
+
+[[package]]
+name = "whisperclip"
+version = "0.1.14"
+dependencies = [
+ "chrono",
+ "cpal",
+ "dirs",
+ "dotenvy",
+ "gtk4",
+ "hound",
+ "reqwest",
+ "rodio",
+ "rubato",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "whisper-rs",
 ]
 
 [[package]]

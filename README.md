@@ -1,12 +1,12 @@
-# LinWhisper
+# WhisperClip
 
 Floating voice-to-text tool for Linux. Click to record, click to transcribe, text copied to clipboard. Supports fully local transcription via whisper.cpp or any OpenAI-compatible API endpoint (Groq, Ollama, OpenRouter, LM Studio, LocalAI, etc.).
 
-![LinWhisper button states](src/screenshots/ui-buttons.png)
+![WhisperClip button states](src/screenshots/ui-buttons.png)
 
 ## Privacy
 
-LinWhisper has no account, no telemetry, and no background processes. Your microphone is **never accessed** until you explicitly click the record button. Audio is captured in-memory, never written to disk. Only the transcribed text is stored locally in SQLite on your machine.
+WhisperClip has no account, no telemetry, and no background processes. Your microphone is **never accessed** until you explicitly click the record button. Audio is captured in-memory, never written to disk. Only the transcribed text is stored locally in SQLite on your machine.
 
 With **local mode** (`PRIMARY_TRANSCRIPTION_SERVICE=local`), everything stays on your machine - no network requests at all. With **API mode** (`PRIMARY_TRANSCRIPTION_SERVICE=api`), audio is sent to your configured endpoint (Groq by default, but can point to a local Ollama/LM Studio instance too).
 
@@ -50,8 +50,8 @@ sudo pacman -S gtk4 graphene vulkan-icd-loader alsa-lib xclip cmake clang
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/adolfousier/linwhisper.git
-   cd linwhisper
+   git clone https://github.com/adolfousier/whisperclip.git
+   cd whisperclip
    ```
 
 2. Build and run:
@@ -74,8 +74,8 @@ sudo pacman -S gtk4 graphene vulkan-icd-loader alsa-lib xclip cmake clang
    **Without just** (manual setup):
    ```bash
    # Download a whisper model for local mode
-   mkdir -p ~/.local/share/linwhisper/models
-   curl -L -o ~/.local/share/linwhisper/models/ggml-base.en.bin \
+   mkdir -p ~/.local/share/whisperclip/models
+   curl -L -o ~/.local/share/whisperclip/models/ggml-base.en.bin \
      https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
 
    # Set backend in .env
@@ -121,16 +121,16 @@ This is especially useful with local models that may take a few seconds to trans
 
 ## Keyboard Shortcuts
 
-LinWhisper exposes D-Bus actions that you can bind to global keyboard shortcuts in your desktop environment. This works on **GNOME, KDE, Sway, Hyprland, i3**, and any DE that supports custom shortcuts.
+WhisperClip exposes D-Bus actions that you can bind to global keyboard shortcuts in your desktop environment. This works on **GNOME, KDE, Sway, Hyprland, i3**, and any DE that supports custom shortcuts.
 
 **Start recording** (raises window and begins recording):
 ```
-gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate record [] {}
+gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate record [] {}
 ```
 
 **Stop recording** (stops recording and triggers transcription):
 ```
-gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate stop [] {}
+gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate stop [] {}
 ```
 
 ### GNOME
@@ -139,8 +139,8 @@ Settings > Keyboard > Custom Shortcuts:
 
 | Name | Command | Suggested shortcut |
 |------|---------|-------------------|
-| LinWhisper Record | `gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate record [] {}` | Alt+Shift+R |
-| LinWhisper Stop | `gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate stop [] {}` | Alt+Shift+S |
+| WhisperClip Record | `gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate record [] {}` | Alt+Shift+R |
+| WhisperClip Stop | `gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate stop [] {}` | Alt+Shift+S |
 
 ### KDE Plasma
 
@@ -151,12 +151,12 @@ System Settings > Shortcuts > Custom Shortcuts > Edit > New > Global Shortcut > 
 Add to your config:
 ```
 # Sway / i3
-bindsym Alt+Shift+r exec gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate record [] {}
-bindsym Alt+Shift+s exec gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate stop [] {}
+bindsym Alt+Shift+r exec gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate record [] {}
+bindsym Alt+Shift+s exec gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate stop [] {}
 
 # Hyprland
-bind = ALT SHIFT, R, exec, gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate record [] {}
-bind = ALT SHIFT, S, exec, gdbus call --session --dest=dev.linwhisper.app --object-path=/dev/linwhisper/app --method=org.gtk.Actions.Activate stop [] {}
+bind = ALT SHIFT, R, exec, gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate record [] {}
+bind = ALT SHIFT, S, exec, gdbus call --session --dest=dev.whisperclip.app --object-path=/dev/whisperclip/app --method=org.gtk.Actions.Activate stop [] {}
 ```
 
 ## Compatible API Backends

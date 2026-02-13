@@ -51,7 +51,7 @@ impl Config {
 
         let data_dir = dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("linwhisper");
+            .join("whisperclip");
         std::fs::create_dir_all(&data_dir).ok();
         let db_path = data_dir.join("history.db");
 

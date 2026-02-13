@@ -1,4 +1,4 @@
-models_dir := env("HOME") / ".local/share/linwhisper/models"
+models_dir := env("HOME") / ".local/share/whisperclip/models"
 default_model := "ggml-base.en.bin"
 
 # Build release binary
