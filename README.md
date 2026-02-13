@@ -4,9 +4,11 @@ Floating voice-to-text tool for Linux. Click to record, click to transcribe and 
 
 ![LinWhisper button states](src/screenshots/ui-buttons.png)
 
-## Privacy First
+## Privacy
 
-LinWhisper runs locally - no account, no telemetry, no background processes. Your microphone is **never accessed** until you explicitly click the record button. Audio is captured in-memory and sent to the Groq API for transcription, then immediately discarded. Raw audio is never written to disk and is not stored by Groq ([Groq's privacy policy](https://groq.com/privacy-policy/)). Only the transcribed text is stored locally in SQLite on your machine.
+LinWhisper has no account, no telemetry, and no background processes. Your microphone is **never accessed** until you explicitly click the record button. Audio is captured in-memory and sent to the Groq API for transcription, then immediately discarded. Raw audio is never written to disk and is not stored by Groq ([Groq's privacy policy](https://groq.com/privacy-policy/)). Only the transcribed text is stored locally in SQLite on your machine.
+
+> **Coming soon:** fully local transcription via whisper.cpp - no network requests at all.
 
 ## Features
 
