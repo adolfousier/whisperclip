@@ -2,6 +2,10 @@
 
 Floating voice-to-text tool for Linux. Click to record, click to transcribe and paste — powered by Groq's Whisper API.
 
+## Privacy First
+
+LinWhisper runs entirely on your machine. Your microphone is **never accessed** until you explicitly click the record button — there is no background listening. Audio is captured in-memory, sent directly to the Groq API for transcription, and immediately discarded. Raw audio is never written to disk. Only the transcribed text is stored locally in SQLite.
+
 ## Features
 
 - Always-on-top floating microphone button
@@ -9,6 +13,8 @@ Floating voice-to-text tool for Linux. Click to record, click to transcribe and 
 - Transcription via Groq API (whisper-large-v3-turbo)
 - Auto-pastes transcribed text into focused input field
 - SQLite history with right-click access
+- No background mic access — recording only on explicit click
+- Audio stays in-memory, never saved to disk
 
 ## Dependencies
 
