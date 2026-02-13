@@ -1,10 +1,12 @@
 # LinWhisper
 
-Floating voice-to-text tool for Linux. Click to record, click to transcribe and paste — powered by Groq's Whisper API.
+Floating voice-to-text tool for Linux. Click to record, click to transcribe and paste - powered by Groq's Whisper API.
+
+![LinWhisper button states](src/screenshots/ui-buttons.png)
 
 ## Privacy First
 
-LinWhisper runs entirely on your machine. Your microphone is **never accessed** until you explicitly click the record button — there is no background listening. Audio is captured in-memory, sent directly to the Groq API for transcription, and immediately discarded. Raw audio is never written to disk. Only the transcribed text is stored locally in SQLite.
+LinWhisper runs locally - no account, no telemetry, no background processes. Your microphone is **never accessed** until you explicitly click the record button. Audio is captured in-memory and sent to the Groq API for transcription, then immediately discarded. Raw audio is never written to disk and is not stored by Groq ([Groq's privacy policy](https://groq.com/privacy-policy/)). Only the transcribed text is stored locally in SQLite on your machine.
 
 ## Features
 
@@ -13,7 +15,7 @@ LinWhisper runs entirely on your machine. Your microphone is **never accessed** 
 - Transcription via Groq API (whisper-large-v3-turbo)
 - Auto-pastes transcribed text into focused input field
 - SQLite history with right-click access
-- No background mic access — recording only on explicit click
+- No background mic access - recording only on explicit click
 - Audio stays in-memory, never saved to disk
 
 ## Dependencies
@@ -32,7 +34,7 @@ sudo pacman -S gtk4 graphene vulkan-icd-loader alsa-lib xclip xdotool wmctrl
 
 ### Runtime requirements
 
-- **X11 session required** — LinWhisper relies on `xdotool`, `xclip`, and `wmctrl` for window positioning, clipboard, and paste simulation. These are X11-only tools and **do not work on native Wayland**. If your distro runs Wayland by default (GNOME 41+, Fedora, etc.), you can either:
+- **X11 session required** - LinWhisper relies on `xdotool`, `xclip`, and `wmctrl` for window positioning, clipboard, and paste simulation. These are X11-only tools and **do not work on native Wayland**. If your distro runs Wayland by default (GNOME 41+, Fedora, etc.), you can either:
   - Log in to an X11/Xorg session from your display manager
   - Run under XWayland (may partially work, but not guaranteed)
 - Working microphone
@@ -64,9 +66,9 @@ sudo pacman -S gtk4 graphene vulkan-icd-loader alsa-lib xclip xdotool wmctrl
 | **Left-click** | Start recording (button turns green with pulse, shows stop icon) |
 | **Left-click again** | Stop recording, transcribe, auto-paste into focused input |
 | **Right-click** | Popover menu with History and Quit |
-| **Drag** | Move the button anywhere on screen — position saved across sessions |
+| **Drag** | Move the button anywhere on screen - position saved across sessions |
 
-> **Note:** Auto-paste uses `xclip` and `xdotool` to simulate Ctrl+V. If text doesn't paste automatically, it will still be copied to your clipboard — just paste manually with Ctrl+V.
+> **Note:** Auto-paste uses `xclip` and `xdotool` to simulate Ctrl+V. If text doesn't paste automatically, it will still be copied to your clipboard - just paste manually with Ctrl+V.
 
 ## Stack
 
@@ -81,4 +83,4 @@ sudo pacman -S gtk4 graphene vulkan-icd-loader alsa-lib xclip xdotool wmctrl
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT - see [LICENSE](LICENSE)
