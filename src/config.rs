@@ -39,7 +39,7 @@ pub const LOCAL_MODEL_PRESETS: &[LocalModelPreset] = &[
     LocalModelPreset { id: "local-medium", label: "Medium", file_name: "ggml-medium.en.bin", size_label: "~1.5 GB" },
 ];
 
-pub const DEFAULT_LOCAL_MODEL: &str = "local-base";
+pub const DEFAULT_LOCAL_MODEL: &str = "local-tiny";
 
 pub fn find_local_model(id: &str) -> Option<&'static LocalModelPreset> {
     LOCAL_MODEL_PRESETS.iter().find(|m| m.id == id)

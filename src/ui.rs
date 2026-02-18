@@ -28,7 +28,7 @@ fn play_notification() {
 }
 
 const CSS: &str = r#"
-    window {
+    window.main-window {
         background-color: transparent;
     }
     .mic-btn {
@@ -125,6 +125,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
         .default_height(100)
         .decorated(false)
         .resizable(false)
+        .css_classes(vec!["main-window"])
         .build();
 
     // Layout
@@ -244,7 +245,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     // Init local whisper only if Local mode AND the selected model file exists
     let initial_whisper: Option<Arc<LocalWhisper>> = if initial_service == TranscriptionService::Local {
         let lm = config::find_local_model(&initial_provider)
-            .unwrap_or(&config::LOCAL_MODEL_PRESETS[1]); // default to "base"
+            .unwrap_or(&config::LOCAL_MODEL_PRESETS[0]); // default to "tiny"
         let model_path = config.models_dir.join(lm.file_name);
         if model_path.exists() {
             match LocalWhisper::new(&model_path) {
@@ -543,6 +544,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
             );
         } else if let Some(preset) = config::find_preset(&chosen) {
             switch_to_preset(
+                &win_mode,
                 &runtime_mode,
                 &config_mode,
                 &db_mode,
@@ -730,6 +732,7 @@ fn delete_all_local_models(models_dir: &std::path::Path) {
 }
 
 fn switch_to_preset(
+    parent: &gtk4::ApplicationWindow,
     runtime: &Rc<RefCell<RuntimeState>>,
     config: &Arc<Config>,
     db: &Arc<Mutex<Db>>,
@@ -737,23 +740,40 @@ fn switch_to_preset(
     status: &gtk4::Label,
     preset: &config::ApiPreset,
 ) {
+    // Resolve API key: DB per-provider key → env var fallback
+    let resolved_key = if preset.needs_key {
+        db.lock().ok()
+            .and_then(|d| d.get_setting(&format!("api_key_{}", preset.id)).ok().flatten())
+            .or_else(|| config.api_key.clone())
+    } else {
+        None
+    };
+
+    // If provider needs a key and we don't have one, show a dialog to collect it
+    if preset.needs_key && resolved_key.is_none() {
+        show_api_key_dialog(parent, runtime, config, db, action, status, preset);
+        return;
+    }
+
+    apply_preset(runtime, config, db, action, status, preset, resolved_key);
+}
+
+fn apply_preset(
+    runtime: &Rc<RefCell<RuntimeState>>,
+    config: &Arc<Config>,
+    db: &Arc<Mutex<Db>>,
+    action: &gtk4::gio::SimpleAction,
+    status: &gtk4::Label,
+    preset: &config::ApiPreset,
+    api_key: Option<String>,
+) {
     {
         let mut rt = runtime.borrow_mut();
         rt.active_service = TranscriptionService::Api;
         rt.active_provider = preset.id.to_string();
         rt.api_base_url = preset.base_url.to_string();
         rt.api_model = preset.default_model.to_string();
-        // For presets that need a key, check DB first, then keep existing key
-        if preset.needs_key {
-            let db_key = db.lock().ok()
-                .and_then(|d| d.get_setting(&format!("api_key_{}", preset.id)).ok().flatten());
-            if let Some(key) = db_key {
-                rt.api_key = Some(key);
-            }
-            // else keep existing api_key (from env var or previous setting)
-        } else {
-            rt.api_key = None;
-        }
+        rt.api_key = api_key;
         rt.local_whisper = None;
     }
 
@@ -773,6 +793,110 @@ fn switch_to_preset(
     glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
         st.set_opacity(0.0);
     });
+}
+
+fn show_api_key_dialog(
+    parent: &gtk4::ApplicationWindow,
+    runtime: &Rc<RefCell<RuntimeState>>,
+    config: &Arc<Config>,
+    db: &Arc<Mutex<Db>>,
+    action: &gtk4::gio::SimpleAction,
+    status: &gtk4::Label,
+    preset: &config::ApiPreset,
+) {
+    let previous_provider = runtime.borrow().active_provider.clone();
+
+    let dialog = gtk4::Window::builder()
+        .title(format!("{} API Key", preset.label))
+        .default_width(380)
+        .default_height(140)
+        .transient_for(parent)
+        .modal(true)
+        .build();
+
+    let grid = gtk4::Grid::builder()
+        .row_spacing(8)
+        .column_spacing(12)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    let label = gtk4::Label::new(Some(&format!("Enter your {} API key:", preset.label)));
+    label.set_halign(gtk4::Align::Start);
+    grid.attach(&label, 0, 0, 2, 1);
+
+    let key_entry = gtk4::Entry::new();
+    key_entry.set_hexpand(true);
+    key_entry.set_placeholder_text(Some("API key"));
+    key_entry.set_input_purpose(gtk4::InputPurpose::Password);
+    key_entry.set_visibility(false);
+    grid.attach(&key_entry, 0, 1, 2, 1);
+
+    let btn_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    btn_box.set_halign(gtk4::Align::End);
+    let cancel_btn = gtk4::Button::with_label("Cancel");
+    let save_btn = gtk4::Button::with_label("Save");
+    btn_box.append(&cancel_btn);
+    btn_box.append(&save_btn);
+    grid.attach(&btn_box, 0, 2, 2, 1);
+
+    dialog.set_child(Some(&grid));
+
+    // Cancel → revert radio to previous provider
+    let action_cancel = action.clone();
+    let prev = previous_provider.clone();
+    let dialog_cancel = dialog.clone();
+    cancel_btn.connect_clicked(move |_| {
+        action_cancel.set_state(&prev.to_variant());
+        dialog_cancel.close();
+    });
+
+    // Save → persist key to DB, then switch
+    let runtime_save = Rc::clone(runtime);
+    let config_save = Arc::clone(config);
+    let db_save = Arc::clone(db);
+    let action_save = action.clone();
+    let status_save = status.clone();
+    let dialog_save = dialog.clone();
+    let preset_id = preset.id;
+    let preset_label = preset.label;
+    let preset_base_url = preset.base_url;
+    let preset_default_model = preset.default_model;
+    save_btn.connect_clicked(move |_| {
+        let key_text = key_entry.text().to_string();
+        if key_text.is_empty() {
+            return;
+        }
+
+        // Persist key to DB
+        if let Ok(d) = db_save.lock() {
+            let _ = d.set_setting(&format!("api_key_{}", preset_id), &key_text);
+        }
+
+        let static_preset = config::ApiPreset {
+            id: preset_id,
+            label: preset_label,
+            base_url: preset_base_url,
+            default_model: preset_default_model,
+            needs_key: true,
+        };
+
+        apply_preset(
+            &runtime_save,
+            &config_save,
+            &db_save,
+            &action_save,
+            &status_save,
+            &static_preset,
+            Some(key_text),
+        );
+
+        dialog_save.close();
+    });
+
+    dialog.present();
 }
 
 fn show_custom_api_dialog(

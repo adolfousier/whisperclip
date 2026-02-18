@@ -1,8 +1,16 @@
 # WhisperCrabs
 
-Floating voice-to-text tool for Linux, macOS, and Windows. Click to record, click to transcribe, text copied to clipboard. Supports fully local transcription via whisper.cpp or any OpenAI-compatible API endpoint (Groq, Ollama, OpenRouter, LM Studio, LocalAI, etc.).
+Floating voice-to-text tool for Linux, macOS, and Windows. 
 
-**AI Agent-Ready** — fully controllable via D-Bus. Works with [OpenCrabs](https://github.com/adolfousier/opencrabs), [OpenClaw](https://github.com/openclaw/openclaw), and any AI agent that can run shell commands. Simple setup: download binary, launch, switch provider via D-Bus.
+Click to record, click to transcribe, text copied to clipboard. Setup customized commands to hit record and stop. Play sound when transcription ready. 
+
+Supports fully local transcription via whisper.cpp or any OpenAI-compatible API endpoint (Groq, Ollama, OpenRouter, LM Studio, LocalAI, etc.).
+
+**AI Agent-Ready** — fully controllable via D-Bus. 
+
+Works with [OpenCrabs](https://github.com/adolfousier/opencrabs), [OpenClaw](https://github.com/openclaw/openclaw), and any AI agent that can run shell commands. 
+
+Simple setup: download binary, launch, switch provider via D-Bus.
 
 ![WhisperCrabs button states](src/screenshots/ui-buttons.png)
 
@@ -33,7 +41,7 @@ With **local mode** (`PRIMARY_TRANSCRIPTION_SERVICE=local`), everything stays on
 
 Right-click the button to switch transcription provider or local model size:
 
-![Right-click menu (dark)](src/screenshots/right-click-menu.png) ![Right-click menu (light)](src/screenshots/right-click-dialog.png)
+![Right-click menu](src/screenshots/right-click-menu.png)
 
 ### Provider Presets
 
@@ -72,9 +80,9 @@ Expand-Archive whispercrabs-*-windows-x86_64.zip -DestinationPath .
 .\whispercrabs.exe
 ```
 
-**For local mode**: right-click the button and select "Local Mode" — the whisper model downloads automatically.
+**For local mode**: right-click the button and select a local model size (Tiny, Base, Small, Medium) — downloads automatically.
 
-**For API mode**: create a `.env` file next to the binary (or export the variable):
+**For API mode**: right-click and select a provider (Groq, OpenRouter, etc.) — enter your API key when prompted. Or set it via `.env`:
 ```bash
 echo 'API_KEY=your-api-key-here' > .env
 ```
