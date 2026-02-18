@@ -20,6 +20,9 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: whispercrabs-linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: whispercrabs-linux-aarch64
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: whispercrabs-macos-aarch64
@@ -138,5 +141,6 @@ jobs:
           generate_release_notes: true
           files: |
             whispercrabs-linux-x86_64/*.tar.gz
+            whispercrabs-linux-aarch64/*.tar.gz
             whispercrabs-macos-aarch64/*.tar.gz
             whispercrabs-windows-x86_64/*.zip
