@@ -6,14 +6,59 @@ pub enum TranscriptionService {
     Local,
 }
 
+pub struct ApiPreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub base_url: &'static str,
+    pub default_model: &'static str,
+    pub needs_key: bool,
+}
+
+pub const API_PRESETS: &[ApiPreset] = &[
+    ApiPreset { id: "groq", label: "Groq", base_url: "https://api.groq.com/openai/v1", default_model: "whisper-large-v3-turbo", needs_key: true },
+    ApiPreset { id: "ollama", label: "Ollama", base_url: "http://localhost:11434/v1", default_model: "whisper", needs_key: false },
+    ApiPreset { id: "openrouter", label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", default_model: "openai/whisper-1", needs_key: true },
+    ApiPreset { id: "lmstudio", label: "LM Studio", base_url: "http://localhost:1234/v1", default_model: "whisper-1", needs_key: false },
+];
+
+pub fn find_preset(id: &str) -> Option<&'static ApiPreset> {
+    API_PRESETS.iter().find(|p| p.id == id)
+}
+
+pub struct LocalModelPreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub file_name: &'static str,
+    pub size_label: &'static str,
+}
+
+pub const LOCAL_MODEL_PRESETS: &[LocalModelPreset] = &[
+    LocalModelPreset { id: "local-tiny", label: "Tiny", file_name: "ggml-tiny.en.bin", size_label: "~75 MB" },
+    LocalModelPreset { id: "local-base", label: "Base", file_name: "ggml-base.en.bin", size_label: "~142 MB" },
+    LocalModelPreset { id: "local-small", label: "Small", file_name: "ggml-small.en.bin", size_label: "~466 MB" },
+    LocalModelPreset { id: "local-medium", label: "Medium", file_name: "ggml-medium.en.bin", size_label: "~1.5 GB" },
+];
+
+pub const DEFAULT_LOCAL_MODEL: &str = "local-base";
+
+pub fn find_local_model(id: &str) -> Option<&'static LocalModelPreset> {
+    LOCAL_MODEL_PRESETS.iter().find(|m| m.id == id)
+}
+
+pub fn model_url(file_name: &str) -> String {
+    format!(
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
+        file_name
+    )
+}
+
 pub struct Config {
     pub transcription_service: TranscriptionService,
     pub api_base_url: String,
     pub api_key: Option<String>,
     pub api_model: String,
     pub db_path: PathBuf,
-    pub whisper_model_path: PathBuf,
-    pub whisper_model_name: String,
+    pub models_dir: PathBuf,
     pub sound_notification: bool,
 }
 
@@ -54,9 +99,6 @@ impl Config {
 
         let models_dir = data_dir.join("models");
         std::fs::create_dir_all(&models_dir).ok();
-        let whisper_model_name =
-            std::env::var("WHISPER_MODEL").unwrap_or_else(|_| "ggml-base.en.bin".into());
-        let whisper_model_path = models_dir.join(&whisper_model_name);
 
         let sound_notification = std::env::var("SOUND_NOTIFICATION_ON_COMPLETION")
             .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
@@ -68,16 +110,8 @@ impl Config {
             api_key,
             api_model,
             db_path,
-            whisper_model_path,
-            whisper_model_name,
+            models_dir,
             sound_notification,
         }
-    }
-
-    pub fn whisper_model_url(&self) -> String {
-        format!(
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
-            self.whisper_model_name
-        )
     }
 }

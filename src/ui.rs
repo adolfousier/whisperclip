@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::audio::Recorder;
-use crate::config::{Config, TranscriptionService};
+use crate::config::{self, Config, TranscriptionService};
 use crate::db::Db;
 use crate::local_stt::LocalWhisper;
 
@@ -100,6 +100,10 @@ enum State {
 
 struct RuntimeState {
     active_service: TranscriptionService,
+    active_provider: String,    // "groq", "ollama", ..., "custom", "local"
+    api_base_url: String,       // active API base URL
+    api_key: Option<String>,    // active API key
+    api_model: String,          // active API model
     local_whisper: Option<Arc<LocalWhisper>>,
     downloading: bool,
 }
@@ -157,24 +161,93 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
         Db::open(&config.db_path).expect("Failed to open database"),
     ));
 
-    // Determine initial mode: DB setting overrides env var
-    let initial_service = {
-        let db_mode = db
+    // Determine initial provider: DB setting overrides env var
+    let (initial_service, initial_provider, initial_base_url, initial_api_key, initial_api_model) = {
+        let db_provider = db
             .lock()
             .ok()
             .and_then(|d| d.get_setting("transcription_mode").ok().flatten());
-        match db_mode.as_deref() {
-            Some("local") => TranscriptionService::Local,
-            Some("api") => TranscriptionService::Api,
-            None => config.transcription_service,
-            _ => config.transcription_service,
+        match db_provider.as_deref() {
+            // Legacy "local" maps to default local model
+            Some("local") => (
+                TranscriptionService::Local,
+                config::DEFAULT_LOCAL_MODEL.to_string(),
+                config.api_base_url.clone(),
+                config.api_key.clone(),
+                config.api_model.clone(),
+            ),
+            Some("custom") => {
+                let d = db.lock().unwrap();
+                let url = d.get_setting("api_custom_url").ok().flatten()
+                    .unwrap_or_else(|| config.api_base_url.clone());
+                let key = d.get_setting("api_custom_key").ok().flatten()
+                    .or_else(|| config.api_key.clone());
+                let model = d.get_setting("api_custom_model").ok().flatten()
+                    .unwrap_or_else(|| config.api_model.clone());
+                (TranscriptionService::Api, "custom".to_string(), url, key, model)
+            }
+            Some(provider_id) => {
+                if let Some(preset) = config::find_preset(provider_id) {
+                    // API preset
+                    let key = if preset.needs_key {
+                        db.lock().ok()
+                            .and_then(|d| d.get_setting(&format!("api_key_{}", preset.id)).ok().flatten())
+                            .or_else(|| config.api_key.clone())
+                    } else {
+                        None
+                    };
+                    (
+                        TranscriptionService::Api,
+                        provider_id.to_string(),
+                        preset.base_url.to_string(),
+                        key,
+                        preset.default_model.to_string(),
+                    )
+                } else if config::find_local_model(provider_id).is_some() {
+                    // Local model preset (e.g. "local-base", "local-small")
+                    (
+                        TranscriptionService::Local,
+                        provider_id.to_string(),
+                        config.api_base_url.clone(),
+                        config.api_key.clone(),
+                        config.api_model.clone(),
+                    )
+                } else {
+                    // Unknown provider in DB, fall back to env var config
+                    (
+                        config.transcription_service,
+                        "groq".to_string(),
+                        config.api_base_url.clone(),
+                        config.api_key.clone(),
+                        config.api_model.clone(),
+                    )
+                }
+            }
+            None => {
+                // No DB setting — use env var config
+                let provider = if config.transcription_service == TranscriptionService::Local {
+                    config::DEFAULT_LOCAL_MODEL
+                } else {
+                    "groq"
+                };
+                (
+                    config.transcription_service,
+                    provider.to_string(),
+                    config.api_base_url.clone(),
+                    config.api_key.clone(),
+                    config.api_model.clone(),
+                )
+            }
         }
     };
 
-    // Init local whisper only if Local mode AND model file exists
-    let initial_whisper: Option<Arc<LocalWhisper>> =
-        if initial_service == TranscriptionService::Local && config.whisper_model_path.exists() {
-            match LocalWhisper::new(&config.whisper_model_path) {
+    // Init local whisper only if Local mode AND the selected model file exists
+    let initial_whisper: Option<Arc<LocalWhisper>> = if initial_service == TranscriptionService::Local {
+        let lm = config::find_local_model(&initial_provider)
+            .unwrap_or(&config::LOCAL_MODEL_PRESETS[1]); // default to "base"
+        let model_path = config.models_dir.join(lm.file_name);
+        if model_path.exists() {
+            match LocalWhisper::new(&model_path) {
                 Ok(w) => Some(Arc::new(w)),
                 Err(e) => {
                     eprintln!("Failed to load whisper model: {e}");
@@ -183,11 +256,18 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
             }
         } else {
             None
-        };
+        }
+    } else {
+        None
+    };
 
     // Runtime state (UI-thread only)
     let runtime = Rc::new(RefCell::new(RuntimeState {
         active_service: initial_service,
+        active_provider: initial_provider.clone(),
+        api_base_url: initial_base_url,
+        api_key: initial_api_key,
+        api_model: initial_api_model,
         local_whisper: initial_whisper,
         downloading: false,
     }));
@@ -225,12 +305,17 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                     return;
                 }
 
-                // Guard: API mode without API key
-                if rt.active_service == TranscriptionService::Api && config_c.api_key.is_none() {
-                    drop(rt);
-                    st.set_label("No API key set");
-                    st.set_opacity(1.0);
-                    return;
+                // Guard: API mode — check if provider needs key and none is set
+                if rt.active_service == TranscriptionService::Api {
+                    let needs_key = config::find_preset(&rt.active_provider)
+                        .map(|p| p.needs_key)
+                        .unwrap_or(true); // custom defaults to needing a key check
+                    if needs_key && rt.api_key.is_none() {
+                        drop(rt);
+                        st.set_label("No API key set");
+                        st.set_opacity(1.0);
+                        return;
+                    }
                 }
                 drop(rt);
 
@@ -273,9 +358,9 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                 let rt = runtime_c.borrow();
                 match rt.active_service {
                     TranscriptionService::Api => {
-                        let base_url = config_c.api_base_url.clone();
-                        let api_key = config_c.api_key.clone().unwrap();
-                        let model = config_c.api_model.clone();
+                        let base_url = rt.api_base_url.clone();
+                        let api_key = rt.api_key.clone().unwrap_or_default();
+                        let model = rt.api_model.clone();
                         std::thread::spawn(move || {
                             let rt = tokio::runtime::Runtime::new().unwrap();
                             let result = rt.block_on(crate::api::transcribe(
@@ -370,24 +455,33 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     let mode_action = gtk4::gio::SimpleAction::new_stateful(
         "transcription-mode",
         Some(&String::static_variant_type()),
-        &(if initial_service == TranscriptionService::Api {
-            "api"
-        } else {
-            "local"
-        })
-        .to_variant(),
+        &initial_provider.to_variant(),
     );
 
-    let transcription_section = gtk4::gio::Menu::new();
-    transcription_section.append(Some("API Mode"), Some("app.transcription-mode::api"));
-    transcription_section.append(Some("Local Mode"), Some("app.transcription-mode::local"));
+    let providers_section = gtk4::gio::Menu::new();
+    for preset in config::API_PRESETS {
+        providers_section.append(
+            Some(preset.label),
+            Some(&format!("app.transcription-mode::{}", preset.id)),
+        );
+    }
+    providers_section.append(Some("Custom API..."), Some("app.transcription-mode::custom"));
+
+    let local_section = gtk4::gio::Menu::new();
+    for lm in config::LOCAL_MODEL_PRESETS {
+        local_section.append(
+            Some(&format!("Local — {} ({})", lm.label, lm.size_label)),
+            Some(&format!("app.transcription-mode::{}", lm.id)),
+        );
+    }
 
     let actions_section = gtk4::gio::Menu::new();
     actions_section.append(Some("History"), Some("app.show-history"));
     actions_section.append(Some("Quit"), Some("app.quit"));
 
     let menu = gtk4::gio::Menu::new();
-    menu.append_section(Some("Transcription"), &transcription_section);
+    menu.append_section(Some("Transcription"), &providers_section);
+    menu.append_section(None, &local_section);
     menu.append_section(None, &actions_section);
 
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
@@ -404,12 +498,13 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     });
     button.add_controller(gesture);
 
-    // Action: transcription mode switch
+    // Action: transcription mode switch (provider-based)
     let runtime_mode = Rc::clone(&runtime);
     let state_mode = Rc::clone(&state);
     let config_mode = Arc::clone(&config);
     let db_mode = Arc::clone(&db);
     let status_mode = status.clone();
+    let win_mode = window.clone();
     mode_action.connect_activate(move |action, param| {
         let chosen: String = param.unwrap().get::<String>().unwrap();
 
@@ -423,30 +518,37 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
             return;
         }
 
-        let current = if runtime_mode.borrow().active_service == TranscriptionService::Api {
-            "api"
-        } else {
-            "local"
-        };
-        if chosen == current {
+        // No-op if already on this provider
+        if chosen == runtime_mode.borrow().active_provider {
             return;
         }
 
-        if chosen == "api" {
-            switch_to_api(
-                &runtime_mode,
-                &config_mode,
-                &db_mode,
-                action,
-                &status_mode,
-            );
-        } else {
+        if let Some(local_preset) = config::find_local_model(&chosen) {
             switch_to_local(
                 &runtime_mode,
                 &config_mode,
                 &db_mode,
                 action,
                 &status_mode,
+                local_preset,
+            );
+        } else if chosen == "custom" {
+            show_custom_api_dialog(
+                &win_mode,
+                &runtime_mode,
+                &db_mode,
+                action,
+                &status_mode,
+                &config_mode,
+            );
+        } else if let Some(preset) = config::find_preset(&chosen) {
+            switch_to_preset(
+                &runtime_mode,
+                &config_mode,
+                &db_mode,
+                action,
+                &status_mode,
+                preset,
             );
         }
     });
@@ -548,41 +650,275 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     });
     app.add_action(&stop_action);
 
+    // --- D-Bus action: "set-api-config" — programmatic custom API setup ---
+    let api_config_action = gtk4::gio::SimpleAction::new(
+        "set-api-config",
+        Some(&String::static_variant_type()),
+    );
+    let runtime_api_cfg = Rc::clone(&runtime);
+    let db_api_cfg = Arc::clone(&db);
+    let config_api_cfg = Arc::clone(&config);
+    let mode_action_ref = mode_action.clone();
+    api_config_action.connect_activate(move |_, param| {
+        let json_str: String = param.unwrap().get::<String>().unwrap();
+        eprintln!("[dbus] 'set-api-config' action activated: {json_str}");
+
+        let parsed: serde_json::Value = match serde_json::from_str(&json_str) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("set-api-config: invalid JSON: {e}");
+                return;
+            }
+        };
+
+        let base_url = match parsed["base_url"].as_str() {
+            Some(u) => u.to_string(),
+            None => {
+                eprintln!("set-api-config: missing 'base_url'");
+                return;
+            }
+        };
+        let model = match parsed["model"].as_str() {
+            Some(m) => m.to_string(),
+            None => {
+                eprintln!("set-api-config: missing 'model'");
+                return;
+            }
+        };
+        let api_key = parsed["api_key"].as_str().map(|s| s.to_string());
+
+        // Persist to DB
+        if let Ok(d) = db_api_cfg.lock() {
+            let _ = d.set_setting("api_custom_url", &base_url);
+            if let Some(ref k) = api_key {
+                let _ = d.set_setting("api_custom_key", k);
+            }
+            let _ = d.set_setting("api_custom_model", &model);
+            let _ = d.set_setting("transcription_mode", "custom");
+        }
+
+        // Update RuntimeState
+        {
+            let mut rt = runtime_api_cfg.borrow_mut();
+            rt.active_service = TranscriptionService::Api;
+            rt.active_provider = "custom".to_string();
+            rt.api_base_url = base_url;
+            rt.api_key = api_key;
+            rt.api_model = model;
+            rt.local_whisper = None;
+        }
+
+        // Delete model file to free disk space
+        delete_all_local_models(&config_api_cfg.models_dir);
+
+        mode_action_ref.set_state(&"custom".to_variant());
+    });
+    app.add_action(&api_config_action);
+
     window.present();
 }
 
-fn switch_to_api(
+fn delete_all_local_models(models_dir: &std::path::Path) {
+    for lm in config::LOCAL_MODEL_PRESETS {
+        let path = models_dir.join(lm.file_name);
+        if path.exists()
+            && let Err(e) = std::fs::remove_file(&path)
+        {
+            eprintln!("Failed to delete model file {}: {e}", lm.file_name);
+        }
+    }
+}
+
+fn switch_to_preset(
     runtime: &Rc<RefCell<RuntimeState>>,
     config: &Arc<Config>,
     db: &Arc<Mutex<Db>>,
     action: &gtk4::gio::SimpleAction,
     status: &gtk4::Label,
+    preset: &config::ApiPreset,
 ) {
-    let mut rt = runtime.borrow_mut();
-    rt.active_service = TranscriptionService::Api;
-    rt.local_whisper = None;
-    drop(rt);
-
-    // Delete model file to free disk space
-    if config.whisper_model_path.exists()
-        && let Err(e) = std::fs::remove_file(&config.whisper_model_path)
     {
-        eprintln!("Failed to delete model file: {e}");
+        let mut rt = runtime.borrow_mut();
+        rt.active_service = TranscriptionService::Api;
+        rt.active_provider = preset.id.to_string();
+        rt.api_base_url = preset.base_url.to_string();
+        rt.api_model = preset.default_model.to_string();
+        // For presets that need a key, check DB first, then keep existing key
+        if preset.needs_key {
+            let db_key = db.lock().ok()
+                .and_then(|d| d.get_setting(&format!("api_key_{}", preset.id)).ok().flatten());
+            if let Some(key) = db_key {
+                rt.api_key = Some(key);
+            }
+            // else keep existing api_key (from env var or previous setting)
+        } else {
+            rt.api_key = None;
+        }
+        rt.local_whisper = None;
     }
+
+    // Delete all local model files to free disk space
+    delete_all_local_models(&config.models_dir);
 
     // Persist to DB
     if let Ok(d) = db.lock() {
-        let _ = d.set_setting("transcription_mode", "api");
+        let _ = d.set_setting("transcription_mode", preset.id);
     }
 
-    action.set_state(&"api".to_variant());
+    action.set_state(&preset.id.to_variant());
 
-    status.set_label("API mode");
+    status.set_label(&format!("{} mode", preset.label));
     status.set_opacity(1.0);
     let st = status.clone();
     glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
         st.set_opacity(0.0);
     });
+}
+
+fn show_custom_api_dialog(
+    parent: &gtk4::ApplicationWindow,
+    runtime: &Rc<RefCell<RuntimeState>>,
+    db: &Arc<Mutex<Db>>,
+    action: &gtk4::gio::SimpleAction,
+    status: &gtk4::Label,
+    config: &Arc<Config>,
+) {
+    let previous_provider = runtime.borrow().active_provider.clone();
+
+    let dialog = gtk4::Window::builder()
+        .title("Custom API Configuration")
+        .default_width(400)
+        .default_height(220)
+        .transient_for(parent)
+        .modal(true)
+        .build();
+
+    let grid = gtk4::Grid::builder()
+        .row_spacing(8)
+        .column_spacing(12)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    // Base URL
+    let url_label = gtk4::Label::new(Some("Base URL"));
+    url_label.set_halign(gtk4::Align::End);
+    let url_entry = gtk4::Entry::new();
+    url_entry.set_hexpand(true);
+    url_entry.set_placeholder_text(Some("https://api.example.com/v1"));
+    grid.attach(&url_label, 0, 0, 1, 1);
+    grid.attach(&url_entry, 1, 0, 2, 1);
+
+    // API Key
+    let key_label = gtk4::Label::new(Some("API Key"));
+    key_label.set_halign(gtk4::Align::End);
+    let key_entry = gtk4::Entry::new();
+    key_entry.set_hexpand(true);
+    key_entry.set_placeholder_text(Some("(optional)"));
+    key_entry.set_input_purpose(gtk4::InputPurpose::Password);
+    key_entry.set_visibility(false);
+    grid.attach(&key_label, 0, 1, 1, 1);
+    grid.attach(&key_entry, 1, 1, 2, 1);
+
+    // Model
+    let model_label = gtk4::Label::new(Some("Model"));
+    model_label.set_halign(gtk4::Align::End);
+    let model_entry = gtk4::Entry::new();
+    model_entry.set_hexpand(true);
+    model_entry.set_placeholder_text(Some("whisper-1"));
+    grid.attach(&model_label, 0, 2, 1, 1);
+    grid.attach(&model_entry, 1, 2, 2, 1);
+
+    // Pre-populate from DB
+    if let Ok(d) = db.lock() {
+        if let Ok(Some(url)) = d.get_setting("api_custom_url") {
+            url_entry.set_text(&url);
+        }
+        if let Ok(Some(key)) = d.get_setting("api_custom_key") {
+            key_entry.set_text(&key);
+        }
+        if let Ok(Some(model)) = d.get_setting("api_custom_model") {
+            model_entry.set_text(&model);
+        }
+    }
+
+    // Buttons
+    let btn_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    btn_box.set_halign(gtk4::Align::End);
+    let cancel_btn = gtk4::Button::with_label("Cancel");
+    let save_btn = gtk4::Button::with_label("Save");
+    btn_box.append(&cancel_btn);
+    btn_box.append(&save_btn);
+    grid.attach(&btn_box, 0, 3, 3, 1);
+
+    dialog.set_child(Some(&grid));
+
+    // Cancel → revert radio to previous provider
+    let action_cancel = action.clone();
+    let prev = previous_provider.clone();
+    let dialog_cancel = dialog.clone();
+    cancel_btn.connect_clicked(move |_| {
+        action_cancel.set_state(&prev.to_variant());
+        dialog_cancel.close();
+    });
+
+    // Save → persist + switch
+    let runtime_save = Rc::clone(runtime);
+    let db_save = Arc::clone(db);
+    let config_save = Arc::clone(config);
+    let action_save = action.clone();
+    let status_save = status.clone();
+    let dialog_save = dialog.clone();
+    save_btn.connect_clicked(move |_| {
+        let url = url_entry.text().to_string();
+        let key_text = key_entry.text().to_string();
+        let model = model_entry.text().to_string();
+
+        if url.is_empty() || model.is_empty() {
+            return; // require at least URL and model
+        }
+
+        let api_key = if key_text.is_empty() { None } else { Some(key_text.clone()) };
+
+        // Persist to DB
+        if let Ok(d) = db_save.lock() {
+            let _ = d.set_setting("api_custom_url", &url);
+            if let Some(ref k) = api_key {
+                let _ = d.set_setting("api_custom_key", k);
+            }
+            let _ = d.set_setting("api_custom_model", &model);
+            let _ = d.set_setting("transcription_mode", "custom");
+        }
+
+        // Update RuntimeState
+        {
+            let mut rt = runtime_save.borrow_mut();
+            rt.active_service = TranscriptionService::Api;
+            rt.active_provider = "custom".to_string();
+            rt.api_base_url = url;
+            rt.api_key = api_key;
+            rt.api_model = model;
+            rt.local_whisper = None;
+        }
+
+        // Delete model file to free disk space
+        delete_all_local_models(&config_save.models_dir);
+
+        action_save.set_state(&"custom".to_variant());
+
+        status_save.set_label("Custom API mode");
+        status_save.set_opacity(1.0);
+        let st = status_save.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
+            st.set_opacity(0.0);
+        });
+
+        dialog_save.close();
+    });
+
+    dialog.present();
 }
 
 fn switch_to_local(
@@ -591,35 +927,57 @@ fn switch_to_local(
     db: &Arc<Mutex<Db>>,
     action: &gtk4::gio::SimpleAction,
     status: &gtk4::Label,
+    local_preset: &config::LocalModelPreset,
 ) {
+    // Delete any previously loaded model files from other presets
+    {
+        let rt = runtime.borrow();
+        if rt.active_service == TranscriptionService::Local
+            && let Some(old_model) = config::find_local_model(&rt.active_provider)
+            && old_model.id != local_preset.id
+        {
+            let old_path = config.models_dir.join(old_model.file_name);
+            if old_path.exists()
+                && let Err(e) = std::fs::remove_file(&old_path)
+            {
+                eprintln!("Failed to delete old model file: {e}");
+            }
+        }
+    }
+
     // Set active service immediately so the menu reflects the choice
-    runtime.borrow_mut().active_service = TranscriptionService::Local;
-    action.set_state(&"local".to_variant());
+    {
+        let mut rt = runtime.borrow_mut();
+        rt.active_service = TranscriptionService::Local;
+        rt.active_provider = local_preset.id.to_string();
+        rt.local_whisper = None;
+    }
+    action.set_state(&local_preset.id.to_variant());
 
     // Persist to DB
     if let Ok(d) = db.lock() {
-        let _ = d.set_setting("transcription_mode", "local");
+        let _ = d.set_setting("transcription_mode", local_preset.id);
     }
 
-    if config.whisper_model_path.exists() {
-        // Model exists — load it on a background thread
-        load_whisper_model(runtime, config, action, status);
+    let model_path = config.models_dir.join(local_preset.file_name);
+    if model_path.exists() {
+        load_whisper_model(runtime, &model_path, action, status);
     } else {
-        // Model missing — download then load
-        download_and_load_model(runtime, config, action, status);
+        let url = config::model_url(local_preset.file_name);
+        download_and_load_model(runtime, &model_path, &url, action, status);
     }
 }
 
 fn load_whisper_model(
     runtime: &Rc<RefCell<RuntimeState>>,
-    config: &Arc<Config>,
+    model_path: &std::path::Path,
     action: &gtk4::gio::SimpleAction,
     status: &gtk4::Label,
 ) {
     status.set_label("Loading model...");
     status.set_opacity(1.0);
 
-    let model_path = config.whisper_model_path.clone();
+    let model_path = model_path.to_path_buf();
     let (tx, rx) = std::sync::mpsc::channel::<Result<Arc<LocalWhisper>, String>>();
 
     std::thread::spawn(move || {
@@ -643,9 +1001,15 @@ fn load_whisper_model(
             }
             Ok(Err(e)) => {
                 eprintln!("Failed to load whisper model: {e}");
-                // Revert to API
-                runtime_c.borrow_mut().active_service = TranscriptionService::Api;
-                action_c.set_state(&"api".to_variant());
+                // Revert to default API provider
+                {
+                    let mut rt = runtime_c.borrow_mut();
+                    rt.active_service = TranscriptionService::Api;
+                    rt.active_provider = "groq".to_string();
+                    rt.api_base_url = config::API_PRESETS[0].base_url.to_string();
+                    rt.api_model = config::API_PRESETS[0].default_model.to_string();
+                }
+                action_c.set_state(&"groq".to_variant());
                 st.set_label("Model load failed");
                 let st2 = st.clone();
                 glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
@@ -655,8 +1019,14 @@ fn load_whisper_model(
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(_) => {
-                runtime_c.borrow_mut().active_service = TranscriptionService::Api;
-                action_c.set_state(&"api".to_variant());
+                {
+                    let mut rt = runtime_c.borrow_mut();
+                    rt.active_service = TranscriptionService::Api;
+                    rt.active_provider = "groq".to_string();
+                    rt.api_base_url = config::API_PRESETS[0].base_url.to_string();
+                    rt.api_model = config::API_PRESETS[0].default_model.to_string();
+                }
+                action_c.set_state(&"groq".to_variant());
                 st.set_label("Model load failed");
                 let st2 = st.clone();
                 glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
@@ -677,7 +1047,8 @@ enum DownloadMsg {
 
 fn download_and_load_model(
     runtime: &Rc<RefCell<RuntimeState>>,
-    config: &Arc<Config>,
+    model_path: &std::path::Path,
+    url: &str,
     action: &gtk4::gio::SimpleAction,
     status: &gtk4::Label,
 ) {
@@ -686,8 +1057,9 @@ fn download_and_load_model(
     status.set_label("Downloading model...");
     status.set_opacity(1.0);
 
-    let url = config.whisper_model_url();
-    let model_path = config.whisper_model_path.clone();
+    let url = url.to_string();
+    let model_path = model_path.to_path_buf();
+    let loaded_model_path = model_path.clone();
     let part_path = model_path.with_extension("bin.part");
 
     let (tx, rx) = std::sync::mpsc::channel::<DownloadMsg>();
@@ -745,7 +1117,6 @@ fn download_and_load_model(
     });
 
     let runtime_c = Rc::clone(runtime);
-    let config_c = Arc::clone(config);
     let action_c = action.clone();
     let st = status.clone();
     glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
@@ -770,7 +1141,7 @@ fn download_and_load_model(
                 runtime_c.borrow_mut().downloading = false;
                 st.set_label("Loading model...");
                 // Now load the model
-                load_whisper_model(&runtime_c, &config_c, &action_c, &st);
+                load_whisper_model(&runtime_c, &loaded_model_path, &action_c, &st);
                 glib::ControlFlow::Break
             }
             Some(DownloadMsg::Error(e)) => {
@@ -779,8 +1150,11 @@ fn download_and_load_model(
                     let mut rt = runtime_c.borrow_mut();
                     rt.downloading = false;
                     rt.active_service = TranscriptionService::Api;
+                    rt.active_provider = "groq".to_string();
+                    rt.api_base_url = config::API_PRESETS[0].base_url.to_string();
+                    rt.api_model = config::API_PRESETS[0].default_model.to_string();
                 }
-                action_c.set_state(&"api".to_variant());
+                action_c.set_state(&"groq".to_variant());
                 st.set_label("Download failed");
                 let st2 = st.clone();
                 glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {

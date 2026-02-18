@@ -90,6 +90,7 @@ jobs:
       - name: Build GTK4 with gvsbuild (Windows)
         if: runner.os == 'Windows' && steps.cache-gtk.outputs.cache-hit != 'true'
         run: |
+          cargo install cargo-c --locked
           pip install gvsbuild
           gvsbuild build gtk4
 

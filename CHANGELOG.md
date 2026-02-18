@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.16 — 2026-02-18
+
+- **API provider presets in right-click menu** — Groq, Ollama, OpenRouter, LM Studio as one-click radio items
+- **Custom API dialog** — "Custom API..." opens a GTK4 dialog with Base URL, API Key, and Model fields; persists to DB
+- **Local model size picker** — choose between Tiny (~75 MB), Base (~142 MB), Small (~466 MB), Medium (~1.5 GB)
+- **D-Bus `set-api-config` action** — AI agents can programmatically configure custom API endpoints via JSON
+- Provider and local model selection persists across restarts
+- Switching between local model sizes auto-deletes the previous model to free disk space
+- API key per-provider: stored in DB, looked up per preset on switch
+- Providers that don't need an API key (Ollama, LM Studio) skip the key check
+- AI Agent-Ready: fully controllable via D-Bus — switch providers, set custom endpoints, record/stop
+
 ## v0.1.15 — 2026-02-18
 
 - Runtime transcription mode switching via right-click menu (API Mode / Local Mode radio items)

@@ -1,6 +1,8 @@
 # WhisperCrabs
 
-Floating voice-to-text tool for Linux. Click to record, click to transcribe, text copied to clipboard. Supports fully local transcription via whisper.cpp or any OpenAI-compatible API endpoint (Groq, Ollama, OpenRouter, LM Studio, LocalAI, etc.).
+Floating voice-to-text tool for Linux, macOS, and Windows. Click to record, click to transcribe, text copied to clipboard. Supports fully local transcription via whisper.cpp or any OpenAI-compatible API endpoint (Groq, Ollama, OpenRouter, LM Studio, LocalAI, etc.).
+
+**AI Agent-Ready** — fully controllable via D-Bus. Works with [OpenCrabs](https://github.com/adolfousier/opencrabs), [OpenClaw](https://github.com/openclaw/openclaw), and any AI agent that can run shell commands. Simple setup: download binary, launch, switch provider via D-Bus.
 
 ![WhisperCrabs button states](src/screenshots/ui-buttons.png)
 
@@ -14,27 +16,60 @@ With **local mode** (`PRIMARY_TRANSCRIPTION_SERVICE=local`), everything stays on
 
 - Floating microphone button (draggable, position persists)
 - One-click voice recording with visual feedback (red idle, green recording, orange transcribing)
+- **One-click provider switching** via right-click menu — Groq, Ollama, OpenRouter, LM Studio, Custom API, or Local
+- **Multiple local model sizes** — Tiny, Base, Small, Medium (auto-download, auto-cleanup on switch)
+- **Custom API dialog** — connect to any OpenAI-compatible endpoint with Base URL, API Key, and Model
 - Global keyboard shortcuts via D-Bus (works on GNOME, KDE, Sway, etc.)
 - Local transcription via whisper.cpp (no internet required)
-- API transcription via any OpenAI-compatible endpoint (Groq, Ollama, OpenRouter, LM Studio, LocalAI)
+- API transcription via any OpenAI-compatible endpoint
 - Transcribed text copied to clipboard automatically
-- Runtime mode switching via right-click menu (auto-downloads model, deletes on switch back)
+- Provider and model choice persists across restarts (saved to DB)
 - SQLite history with right-click access
-- No background mic access - recording only on explicit click
+- AI Agent-Ready: full D-Bus control for provider switching, custom API setup, recording
+- No background mic access — recording only on explicit click
 - Audio stays in-memory, never saved to disk
+
+### Right-Click Menu
+
+Right-click the button to switch transcription provider or local model size:
+
+![Right-click menu (dark)](src/screenshots/right-click-menu.png) ![Right-click menu (light)](src/screenshots/right-click-dialog.png)
+
+### Provider Presets
+
+| Provider | Base URL | Default Model | API Key |
+|----------|----------|---------------|---------|
+| Groq | `https://api.groq.com/openai/v1` | `whisper-large-v3-turbo` | Required |
+| Ollama | `http://localhost:11434/v1` | `whisper` | Not needed |
+| OpenRouter | `https://openrouter.ai/api/v1` | `openai/whisper-1` | Required |
+| LM Studio | `http://localhost:1234/v1` | `whisper-1` | Not needed |
+| Custom API... | User-configured | User-configured | Optional |
 
 ## Quick Install
 
-Download the pre-built binary from the latest release and run it. No build tools or Rust toolchain needed.
+Download the pre-built binary from the [latest release](https://github.com/adolfousier/whispercrabs/releases) and run it. No build tools or Rust toolchain needed.
 
+**Linux (x86_64 / aarch64):**
 ```bash
-# Download latest release
 gh release download --repo adolfousier/whispercrabs --pattern 'whispercrabs-*-linux-x86_64.tar.gz'
 tar xzf whispercrabs-*-linux-x86_64.tar.gz
 chmod +x whispercrabs
-
-# Run (starts in API mode by default)
 ./whispercrabs
+```
+
+**macOS (Apple Silicon):**
+```bash
+gh release download --repo adolfousier/whispercrabs --pattern 'whispercrabs-*-macos-aarch64.tar.gz'
+tar xzf whispercrabs-*-macos-aarch64.tar.gz
+chmod +x whispercrabs
+./whispercrabs
+```
+
+**Windows (x86_64):**
+```powershell
+gh release download --repo adolfousier/whispercrabs --pattern 'whispercrabs-*-windows-x86_64.zip'
+Expand-Archive whispercrabs-*-windows-x86_64.zip -DestinationPath .
+.\whispercrabs.exe
 ```
 
 **For local mode**: right-click the button and select "Local Mode" — the whisper model downloads automatically.
@@ -46,9 +81,8 @@ echo 'API_KEY=your-api-key-here' > .env
 
 ### Runtime requirements
 
-- **GTK 4** runtime libraries (usually pre-installed on GNOME desktops)
+- **GTK 4** runtime libraries (pre-installed on GNOME desktops; bundled in Windows release ZIP; `brew install gtk4` on macOS)
 - Working microphone
-- Wayland or X11
 
 > **AI Agent note**: WhisperCrabs is fully controllable via D-Bus from the command line. An AI agent can set up WhisperCrabs for a user by: (1) downloading the binary from a GitHub release, (2) writing a `.env` with the user's API key, (3) launching the binary, and (4) switching transcription mode via D-Bus — no build step required. See the [D-Bus Control](#d-bus-control) section for all available commands.
 
@@ -128,7 +162,7 @@ Models are downloaded from [HuggingFace (ggerganov/whisper.cpp)](https://hugging
 | **Left-click** | Start recording (button turns green with pulse) |
 | **Left-click again** | Stop recording, transcribe, copy to clipboard |
 | **Esc** (when focused) | Stop recording |
-| **Right-click** | Popover menu: switch mode (API/Local), History, Quit |
+| **Right-click** | Popover menu: switch provider (Groq/Ollama/OpenRouter/LM Studio/Custom/Local), History, Quit |
 | **Drag** | Move the button anywhere on screen |
 
 After transcription completes, the text is copied to your clipboard. Paste with **Ctrl+V** wherever you need it.
@@ -157,14 +191,42 @@ gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs
 gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate stop [] {}
 ```
 
-**Switch to local mode** (auto-downloads model if missing):
+**Switch to a provider** (e.g. Groq, Ollama, OpenRouter, LM Studio):
 ```bash
-gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'local'>]" {}
+# Switch to Groq
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'groq'>]" {}
+
+# Switch to Ollama (local API, no key needed)
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'ollama'>]" {}
+
+# Switch to OpenRouter
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'openrouter'>]" {}
+
+# Switch to LM Studio
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'lmstudio'>]" {}
 ```
 
-**Switch to API mode** (deletes local model to free disk):
+**Switch to local mode** (auto-downloads model if missing, choose size):
 ```bash
-gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'api'>]" {}
+# Local Base model (~142 MB, default)
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'local-base'>]" {}
+
+# Local Tiny (~75 MB), Small (~466 MB), or Medium (~1.5 GB)
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'local-tiny'>]" {}
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'local-small'>]" {}
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app --method=org.gtk.Actions.Activate transcription-mode "[<'local-medium'>]" {}
+```
+
+**Set custom API endpoint** (programmatic, no dialog):
+```bash
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app \
+  --method=org.gtk.Actions.Activate set-api-config \
+  "[<'{\"base_url\":\"http://localhost:11434/v1\",\"model\":\"whisper\"}'>]" {}
+
+# With API key:
+gdbus call --session --dest=dev.whispercrabs.app --object-path=/dev/whispercrabs/app \
+  --method=org.gtk.Actions.Activate set-api-config \
+  "[<'{\"base_url\":\"https://api.example.com/v1\",\"api_key\":\"sk-...\",\"model\":\"whisper-1\"}'>]" {}
 ```
 
 ### Keyboard Shortcuts
