@@ -10,25 +10,26 @@ pub struct Recorder {
 }
 
 impl Recorder {
-    pub fn new() -> Result<Self, String> {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or("No input device available")?;
-
-        let config = device
-            .default_input_config()
-            .map_err(|e| format!("No input config: {e}"))?;
-
-        let sample_rate = config.sample_rate().0;
-        let channels = config.channels();
-
-        Ok(Self {
+    pub fn new() -> Self {
+        let (sample_rate, channels) = Self::probe_input().unwrap_or((44100, 1));
+        Self {
             samples: Arc::new(Mutex::new(Vec::new())),
             stream: None,
             sample_rate,
             channels,
-        })
+        }
+    }
+
+    /// Check whether an input device is available right now.
+    pub fn input_available() -> bool {
+        Self::probe_input().is_some()
+    }
+
+    fn probe_input() -> Option<(u32, u16)> {
+        let host = cpal::default_host();
+        let device = host.default_input_device()?;
+        let config = device.default_input_config().ok()?;
+        Some((config.sample_rate().0, config.channels()))
     }
 
     pub fn start(&mut self) -> Result<(), String> {

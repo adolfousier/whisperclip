@@ -275,7 +275,7 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
 
     // Shared state
     let state = Rc::new(RefCell::new(State::Idle));
-    let recorder = Rc::new(RefCell::new(Recorder::new().expect("Failed to init audio")));
+    let recorder = Rc::new(RefCell::new(Recorder::new()));
 
     // --- Left-click handler (on the Button) ---
     let btn = button.clone();
@@ -319,6 +319,12 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                     }
                 }
                 drop(rt);
+
+                if !Recorder::input_available() {
+                    st.set_label("No microphone found");
+                    st.set_opacity(1.0);
+                    return;
+                }
 
                 if let Err(e) = rec_c.borrow_mut().start() {
                     eprintln!("Record start error: {e}");
