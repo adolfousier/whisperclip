@@ -15,10 +15,34 @@ pub struct ApiPreset {
 }
 
 pub const API_PRESETS: &[ApiPreset] = &[
-    ApiPreset { id: "groq", label: "Groq", base_url: "https://api.groq.com/openai/v1", default_model: "whisper-large-v3-turbo", needs_key: true },
-    ApiPreset { id: "ollama", label: "Ollama", base_url: "http://localhost:11434/v1", default_model: "whisper", needs_key: false },
-    ApiPreset { id: "openrouter", label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", default_model: "openai/whisper-1", needs_key: true },
-    ApiPreset { id: "lmstudio", label: "LM Studio", base_url: "http://localhost:1234/v1", default_model: "whisper-1", needs_key: false },
+    ApiPreset {
+        id: "groq",
+        label: "Groq",
+        base_url: "https://api.groq.com/openai/v1",
+        default_model: "whisper-large-v3-turbo",
+        needs_key: true,
+    },
+    ApiPreset {
+        id: "ollama",
+        label: "Ollama",
+        base_url: "http://localhost:11434/v1",
+        default_model: "whisper",
+        needs_key: false,
+    },
+    ApiPreset {
+        id: "openrouter",
+        label: "OpenRouter",
+        base_url: "https://openrouter.ai/api/v1",
+        default_model: "openai/whisper-1",
+        needs_key: true,
+    },
+    ApiPreset {
+        id: "lmstudio",
+        label: "LM Studio",
+        base_url: "http://localhost:1234/v1",
+        default_model: "whisper-1",
+        needs_key: false,
+    },
 ];
 
 pub fn find_preset(id: &str) -> Option<&'static ApiPreset> {
@@ -33,10 +57,30 @@ pub struct LocalModelPreset {
 }
 
 pub const LOCAL_MODEL_PRESETS: &[LocalModelPreset] = &[
-    LocalModelPreset { id: "local-tiny", label: "Tiny", file_name: "ggml-tiny.en.bin", size_label: "~75 MB" },
-    LocalModelPreset { id: "local-base", label: "Base", file_name: "ggml-base.en.bin", size_label: "~142 MB" },
-    LocalModelPreset { id: "local-small", label: "Small", file_name: "ggml-small.en.bin", size_label: "~466 MB" },
-    LocalModelPreset { id: "local-medium", label: "Medium", file_name: "ggml-medium.en.bin", size_label: "~1.5 GB" },
+    LocalModelPreset {
+        id: "local-tiny",
+        label: "Tiny",
+        file_name: "ggml-tiny.en.bin",
+        size_label: "~75 MB",
+    },
+    LocalModelPreset {
+        id: "local-base",
+        label: "Base",
+        file_name: "ggml-base.en.bin",
+        size_label: "~142 MB",
+    },
+    LocalModelPreset {
+        id: "local-small",
+        label: "Small",
+        file_name: "ggml-small.en.bin",
+        size_label: "~466 MB",
+    },
+    LocalModelPreset {
+        id: "local-medium",
+        label: "Medium",
+        file_name: "ggml-medium.en.bin",
+        size_label: "~1.5 GB",
+    },
 ];
 
 pub const DEFAULT_LOCAL_MODEL: &str = "local-tiny";

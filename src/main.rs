@@ -4,6 +4,8 @@ mod config;
 mod db;
 mod input;
 mod local_stt;
+#[cfg(test)]
+mod tests;
 mod ui;
 
 use gtk4::prelude::*;

@@ -1,4 +1,6 @@
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 use std::io::Cursor;
 use std::path::Path;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
@@ -11,9 +13,7 @@ pub struct LocalWhisper {
 
 impl LocalWhisper {
     pub fn new(model_path: &Path) -> Result<Self, String> {
-        let path_str = model_path
-            .to_str()
-            .ok_or("Model path is not valid UTF-8")?;
+        let path_str = model_path.to_str().ok_or("Model path is not valid UTF-8")?;
         let ctx = WhisperContext::new_with_params(path_str, WhisperContextParameters::default())
             .map_err(|e| format!("Failed to load whisper model: {e}"))?;
         Ok(Self { ctx })
@@ -22,8 +22,8 @@ impl LocalWhisper {
     pub fn transcribe(&self, wav_data: &[u8], device_sample_rate: u32) -> Result<String, String> {
         // Parse WAV to f32 samples
         let cursor = Cursor::new(wav_data);
-        let mut reader = hound::WavReader::new(cursor)
-            .map_err(|e| format!("WAV parse error: {e}"))?;
+        let mut reader =
+            hound::WavReader::new(cursor).map_err(|e| format!("WAV parse error: {e}"))?;
         let samples: Vec<f32> = reader
             .samples::<i16>()
             .map(|s| s.unwrap_or(0) as f32 / i16::MAX as f32)
@@ -41,7 +41,9 @@ impl LocalWhisper {
         };
 
         // Run whisper inference
-        let mut state = self.ctx.create_state()
+        let mut state = self
+            .ctx
+            .create_state()
             .map_err(|e| format!("Failed to create whisper state: {e}"))?;
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_print_special(false);
@@ -49,7 +51,8 @@ impl LocalWhisper {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
 
-        state.full(params, &audio_16k)
+        state
+            .full(params, &audio_16k)
             .map_err(|e| format!("Whisper inference failed: {e}"))?;
 
         // Collect transcription text
@@ -83,7 +86,8 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Result<Vec<f32>, Str
 
     while pos + chunk_size <= input.len() {
         let chunk = &input[pos..pos + chunk_size];
-        let result = resampler.process(&[chunk], None)
+        let result = resampler
+            .process(&[chunk], None)
             .map_err(|e| format!("Resample error: {e}"))?;
         output.extend_from_slice(&result[0]);
         pos += chunk_size;
@@ -92,7 +96,8 @@ fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Result<Vec<f32>, Str
     // Handle remaining samples
     if pos < input.len() {
         let remaining = &input[pos..];
-        let result = resampler.process_partial(Some(&[remaining]), None)
+        let result = resampler
+            .process_partial(Some(&[remaining]), None)
             .map_err(|e| format!("Resample error: {e}"))?;
         output.extend_from_slice(&result[0]);
     }

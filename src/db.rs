@@ -37,7 +37,9 @@ impl Db {
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM settings WHERE key = ?1")?;
         let mut rows = stmt.query_map(params![key], |row| row.get(0))?;
         match rows.next() {
             Some(Ok(val)) => Ok(Some(val)),
@@ -55,9 +57,9 @@ impl Db {
     }
 
     pub fn recent(&self, limit: usize) -> Result<Vec<Transcription>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, text, created_at FROM transcriptions ORDER BY id DESC LIMIT ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, text, created_at FROM transcriptions ORDER BY id DESC LIMIT ?1")?;
         let rows = stmt.query_map(params![limit as i64], |row| {
             Ok(Transcription {
                 _id: row.get(0)?,

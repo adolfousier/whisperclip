@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.17 — 2026-03-05
+
+- **Cross-platform mic icon** — replaced freedesktop icon theme with bundled SVG; mic button now renders correctly on macOS
+- **macOS UI polish** — dark window background, branded "WHISPER CRABS" label, tuned button/icon sizing for macOS
+- **Unit tests** — added test suite for config presets, database operations, and model download URLs
+- Fixed clippy warnings (unused variables on non-Linux platforms)
+- Code formatting cleanup (`cargo fmt`)
+
 ## v0.1.16 — 2026-02-18
 
 - **API provider presets in right-click menu** — Groq, Ollama, OpenRouter, LM Studio as one-click radio items

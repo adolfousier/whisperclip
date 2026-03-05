@@ -1,6 +1,6 @@
 [package]
 name = "whispercrabs"
-version = "0.1.16"
+version = "0.1.17"
 edition = "2024"
 authors = ["Adolfo Usier"]
 license = "MIT"
@@ -23,3 +23,6 @@ whisper-rs = "0.15"
 rubato = "0.14"
 rodio = { version = "0.19", default-features = false, features = ["wav"] }
 arboard = "3"
+
+[dev-dependencies]
+tempfile = "3"

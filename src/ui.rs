@@ -10,7 +10,7 @@ use crate::config::{self, Config, TranscriptionService};
 use crate::db::Db;
 use crate::local_stt::LocalWhisper;
 
-const ICON_MIC: &str = "audio-input-microphone-symbolic";
+const MIC_SVG: &[u8] = include_bytes!("icons/microphone.svg");
 const NOTIFICATION_SOUND: &[u8] = include_bytes!("audio/notification.wav");
 
 fn play_notification() {
@@ -30,6 +30,14 @@ fn play_notification() {
 const CSS: &str = r#"
     window.main-window {
         background-color: transparent;
+    }
+    window.main-window.macos-bg {
+        background-color: #111111;
+    }
+    .macos-bg .mic-btn {
+        margin-top: 8px;
+        min-width: 68px;
+        min-height: 68px;
     }
     .mic-btn {
         min-width: 72px;
@@ -81,6 +89,13 @@ const CSS: &str = r#"
         50%  { opacity: 0.7; }
         100% { opacity: 1.0; }
     }
+    .brand-label {
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 9px;
+        font-weight: 500;
+        letter-spacing: 1px;
+        margin-top: 4px;
+    }
     .status-label {
         color: #e2e8f0;
         font-size: 12px;
@@ -100,10 +115,10 @@ enum State {
 
 struct RuntimeState {
     active_service: TranscriptionService,
-    active_provider: String,    // "groq", "ollama", ..., "custom", "local"
-    api_base_url: String,       // active API base URL
-    api_key: Option<String>,    // active API key
-    api_model: String,          // active API model
+    active_provider: String, // "groq", "ollama", ..., "custom", "local"
+    api_base_url: String,    // active API base URL
+    api_key: Option<String>, // active API key
+    api_model: String,       // active API model
     local_whisper: Option<Arc<LocalWhisper>>,
     downloading: bool,
 }
@@ -128,13 +143,21 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
         .css_classes(vec!["main-window"])
         .build();
 
+    #[cfg(target_os = "macos")]
+    window.add_css_class("macos-bg");
+
     // Layout
     let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     vbox.set_halign(gtk4::Align::Center);
     vbox.set_valign(gtk4::Align::Center);
 
     // The mic button (no keyboard activation to prevent accidental recordings)
-    let icon = gtk4::Image::from_icon_name(ICON_MIC);
+    let loader = gtk4::gdk_pixbuf::PixbufLoader::with_type("svg").unwrap();
+    loader.write(MIC_SVG).unwrap();
+    loader.close().unwrap();
+    let pixbuf = loader.pixbuf().expect("failed to load mic icon");
+    let texture = gdk::Texture::for_pixbuf(&pixbuf);
+    let icon = gtk4::Image::from_paintable(Some(&texture));
     icon.set_pixel_size(32);
     let button = gtk4::Button::new();
     button.set_child(Some(&icon));
@@ -148,6 +171,19 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     status.set_opacity(0.0);
 
     vbox.append(&button);
+
+    // On macOS there's no transparent window, so show branding
+    #[cfg(target_os = "macos")]
+    {
+        icon.set_pixel_size(36);
+        button.set_size_request(68, 68);
+        let brand = gtk4::Label::new(Some("WHISPER\nCRABS"));
+        brand.set_justify(gtk4::Justification::Center);
+        brand.add_css_class("brand-label");
+        vbox.append(&brand);
+        window.set_default_size(96, 96);
+    }
+
     vbox.append(&status);
 
     // WindowHandle wraps everything — makes the empty area around
@@ -179,20 +215,40 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
             ),
             Some("custom") => {
                 let d = db.lock().unwrap();
-                let url = d.get_setting("api_custom_url").ok().flatten()
+                let url = d
+                    .get_setting("api_custom_url")
+                    .ok()
+                    .flatten()
                     .unwrap_or_else(|| config.api_base_url.clone());
-                let key = d.get_setting("api_custom_key").ok().flatten()
+                let key = d
+                    .get_setting("api_custom_key")
+                    .ok()
+                    .flatten()
                     .or_else(|| config.api_key.clone());
-                let model = d.get_setting("api_custom_model").ok().flatten()
+                let model = d
+                    .get_setting("api_custom_model")
+                    .ok()
+                    .flatten()
                     .unwrap_or_else(|| config.api_model.clone());
-                (TranscriptionService::Api, "custom".to_string(), url, key, model)
+                (
+                    TranscriptionService::Api,
+                    "custom".to_string(),
+                    url,
+                    key,
+                    model,
+                )
             }
             Some(provider_id) => {
                 if let Some(preset) = config::find_preset(provider_id) {
                     // API preset
                     let key = if preset.needs_key {
-                        db.lock().ok()
-                            .and_then(|d| d.get_setting(&format!("api_key_{}", preset.id)).ok().flatten())
+                        db.lock()
+                            .ok()
+                            .and_then(|d| {
+                                d.get_setting(&format!("api_key_{}", preset.id))
+                                    .ok()
+                                    .flatten()
+                            })
                             .or_else(|| config.api_key.clone())
                     } else {
                         None
@@ -243,24 +299,25 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     };
 
     // Init local whisper only if Local mode AND the selected model file exists
-    let initial_whisper: Option<Arc<LocalWhisper>> = if initial_service == TranscriptionService::Local {
-        let lm = config::find_local_model(&initial_provider)
-            .unwrap_or(&config::LOCAL_MODEL_PRESETS[0]); // default to "tiny"
-        let model_path = config.models_dir.join(lm.file_name);
-        if model_path.exists() {
-            match LocalWhisper::new(&model_path) {
-                Ok(w) => Some(Arc::new(w)),
-                Err(e) => {
-                    eprintln!("Failed to load whisper model: {e}");
-                    None
+    let initial_whisper: Option<Arc<LocalWhisper>> =
+        if initial_service == TranscriptionService::Local {
+            let lm = config::find_local_model(&initial_provider)
+                .unwrap_or(&config::LOCAL_MODEL_PRESETS[0]); // default to "tiny"
+            let model_path = config.models_dir.join(lm.file_name);
+            if model_path.exists() {
+                match LocalWhisper::new(&model_path) {
+                    Ok(w) => Some(Arc::new(w)),
+                    Err(e) => {
+                        eprintln!("Failed to load whisper model: {e}");
+                        None
+                    }
                 }
+            } else {
+                None
             }
         } else {
             None
-        }
-    } else {
-        None
-    };
+        };
 
     // Runtime state (UI-thread only)
     let runtime = Rc::new(RefCell::new(RuntimeState {
@@ -370,9 +427,8 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                         let model = rt.api_model.clone();
                         std::thread::spawn(move || {
                             let rt = tokio::runtime::Runtime::new().unwrap();
-                            let result = rt.block_on(crate::api::transcribe(
-                                &base_url, &api_key, &model, wav,
-                            ));
+                            let result = rt
+                                .block_on(crate::api::transcribe(&base_url, &api_key, &model, wav));
                             let _ = tx.send(result);
                         });
                     }
@@ -414,7 +470,6 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
                                         move || {
                                             st3.set_opacity(0.0);
                                             btn3.remove_css_class("done");
-
                                         },
                                     );
                                 }
@@ -472,7 +527,10 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
             Some(&format!("app.transcription-mode::{}", preset.id)),
         );
     }
-    providers_section.append(Some("Custom API..."), Some("app.transcription-mode::custom"));
+    providers_section.append(
+        Some("Custom API..."),
+        Some("app.transcription-mode::custom"),
+    );
 
     let local_section = gtk4::gio::Menu::new();
     for lm in config::LOCAL_MODEL_PRESETS {
@@ -659,10 +717,8 @@ pub fn build_ui(app: &gtk4::Application, config: Arc<Config>) {
     app.add_action(&stop_action);
 
     // --- D-Bus action: "set-api-config" — programmatic custom API setup ---
-    let api_config_action = gtk4::gio::SimpleAction::new(
-        "set-api-config",
-        Some(&String::static_variant_type()),
-    );
+    let api_config_action =
+        gtk4::gio::SimpleAction::new("set-api-config", Some(&String::static_variant_type()));
     let runtime_api_cfg = Rc::clone(&runtime);
     let db_api_cfg = Arc::clone(&db);
     let config_api_cfg = Arc::clone(&config);
@@ -748,8 +804,13 @@ fn switch_to_preset(
 ) {
     // Resolve API key: DB per-provider key → env var fallback
     let resolved_key = if preset.needs_key {
-        db.lock().ok()
-            .and_then(|d| d.get_setting(&format!("api_key_{}", preset.id)).ok().flatten())
+        db.lock()
+            .ok()
+            .and_then(|d| {
+                d.get_setting(&format!("api_key_{}", preset.id))
+                    .ok()
+                    .flatten()
+            })
             .or_else(|| config.api_key.clone())
     } else {
         None
@@ -1010,7 +1071,11 @@ fn show_custom_api_dialog(
             return; // require at least URL and model
         }
 
-        let api_key = if key_text.is_empty() { None } else { Some(key_text.clone()) };
+        let api_key = if key_text.is_empty() {
+            None
+        } else {
+            Some(key_text.clone())
+        };
 
         // Persist to DB
         if let Ok(d) = db_save.lock() {
@@ -1297,7 +1362,6 @@ fn download_and_load_model(
     });
 }
 
-
 fn save_window_position(win: &gtk4::ApplicationWindow, db: &Arc<Mutex<Db>>) {
     #[cfg(not(target_os = "linux"))]
     let _ = (&win, &db);
@@ -1333,13 +1397,15 @@ fn position_window(_window: &gtk4::ApplicationWindow, db: &Arc<Mutex<Db>>) {
         Some((x, y))
     });
 
+    #[allow(unused_variables)]
     let (x, y) = match saved {
         Some(pos) => pos,
         None => {
             if let Some(display) = gdk::Display::default() {
                 let monitors = display.monitors();
-                if let Some(monitor) =
-                    monitors.item(0).and_then(|m| m.downcast::<gdk::Monitor>().ok())
+                if let Some(monitor) = monitors
+                    .item(0)
+                    .and_then(|m| m.downcast::<gdk::Monitor>().ok())
                 {
                     let geom = monitor.geometry();
                     (
@@ -1360,8 +1426,12 @@ fn position_window(_window: &gtk4::ApplicationWindow, db: &Arc<Mutex<Db>>) {
         let title = "WhisperCrabs";
         let _ = std::process::Command::new("xdotool")
             .args([
-                "search", "--name", title,
-                "windowmove", &x.to_string(), &y.to_string(),
+                "search",
+                "--name",
+                title,
+                "windowmove",
+                &x.to_string(),
+                &y.to_string(),
             ])
             .status();
     }
