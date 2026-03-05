@@ -2929,7 +2929,7 @@ dependencies = [
 
 [[package]]
 name = "whispercrabs"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "arboard",
  "chrono",
@@ -2944,6 +2944,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "whisper-rs",
 ]
