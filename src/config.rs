@@ -105,6 +105,36 @@ pub fn model_url(file_name: &str) -> String {
     )
 }
 
+// ── TTS (text-to-speech) ────────────────────────────────────────────────────
+
+/// Active TTS provider.
+#[derive(Clone, Copy, PartialEq)]
+pub enum TtsProvider {
+    None,
+    Piper,
+}
+
+/// Voice model files to download for Piper TTS.
+/// Default voice: en_US-amy-medium (natural US English female).
+pub const PIPER_VOICE_FILES: &[(&str, &str)] = &[
+    (
+        "voice.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx",
+    ),
+    (
+        "voice.onnx.json",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
+    ),
+];
+
+/// Check if Piper is fully set up (venv + voice model).
+pub fn piper_models_exist(piper_dir: &std::path::Path) -> bool {
+    piper_dir.join("venv/bin/piper").exists()
+        && PIPER_VOICE_FILES
+            .iter()
+            .all(|(rel, _)| piper_dir.join(rel).exists())
+}
+
 /// Application configuration loaded from environment and `.env` file.
 pub struct Config {
     pub transcription_service: TranscriptionService,

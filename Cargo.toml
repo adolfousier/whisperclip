@@ -30,5 +30,6 @@ rubato = "0.14"
 rodio = { version = "0.19", default-features = false, features = ["wav"] }
 arboard = "3"
 
+
 [dev-dependencies]
 tempfile = "3"
